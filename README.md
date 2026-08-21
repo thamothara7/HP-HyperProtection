@@ -1,6 +1,6 @@
-# InsiderGuard
+# HP-HyperProtection
 
-InsiderGuard is a Windows-focused, privacy-conscious prototype for detecting risky authenticated behaviour at the **identity × session × device-context** level.
+HP-HyperProtection is a Windows-focused, privacy-conscious prototype for detecting risky authenticated behaviour at the **identity × session × device-context** level.
 
 This first vertical slice establishes the contract between the SOC console and the detection pipeline. It uses safe synthetic scenarios while the telemetry, database, baseline, and model layers are built incrementally.
 
@@ -37,6 +37,3 @@ This is not an attribution system: it detects behavioural inconsistency in an au
 ## Next implementation stage
 
 Stage 2 replaces the in-memory simulation state with normalized events, session correlation, SQLite persistence, and a live WebSocket stream. Windows Event Log ingestion begins only after that path is testable end-to-end.
-# HP-HyperProtection
-# HP-HyperProtection
-# HP-HyperProtection
