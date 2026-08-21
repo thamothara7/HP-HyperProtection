@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.bootstrap import create_schema, seed_demo_if_empty
-from app.db.models import DecoyInteractionRecord, EventRecord, IdentityRecord, IncidentRecord, SessionRecord
+from app.db.models import BaselineProfileRecord, DecoyInteractionRecord, EventRecord, IdentityRecord, IncidentRecord, PeerBaselineRecord, SessionRecord
 from app.db.repository import contain, list_session_details, session_detail, session_summary
 from app.db.session import SessionLocal
 from app.schemas import ContainmentResponse, OverviewResponse, Scenario, SessionDetail
@@ -152,6 +152,30 @@ async def incident_stream(websocket: WebSocket) -> None:
 def identities(db: Session = Depends(get_ready_db)) -> list[dict[str, object]]:
     records = db.scalars(select(IdentityRecord).order_by(IdentityRecord.id)).all()
     return [{"id": record.id, "department": record.department, "role": record.role, "sessions": [session_summary(item).model_dump() for item in db.scalars(select(SessionRecord).where(SessionRecord.identity_id == record.id)).all()]} for record in records]
+
+
+@app.get("/api/v1/identities/{identity_id}")
+def identity(identity_id: str, db: Session = Depends(get_ready_db)) -> dict[str, object]:
+    record = db.get(IdentityRecord, identity_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Identity not found")
+    sessions = [session_summary(item).model_dump() for item in db.scalars(select(SessionRecord).where(SessionRecord.identity_id == identity_id).order_by(SessionRecord.last_seen.desc())).all()]
+    return {"id": record.id, "department": record.department, "role": record.role, "sessions": sessions}
+
+
+@app.get("/api/v1/identities/{identity_id}/baseline")
+def identity_baseline(identity_id: str, db: Session = Depends(get_ready_db)) -> dict[str, object]:
+    identity_record = db.get(IdentityRecord, identity_id)
+    if identity_record is None:
+        raise HTTPException(status_code=404, detail="Identity not found")
+    personal = db.scalar(select(BaselineProfileRecord).where(BaselineProfileRecord.identity_id == identity_id))
+    peer = db.scalar(select(PeerBaselineRecord).where(PeerBaselineRecord.department == identity_record.department, PeerBaselineRecord.role == identity_record.role))
+    return {
+        "identity_id": identity_id,
+        "learning_policy": {"normal_below": 30, "reduced_through": 50, "frozen_above": 50},
+        "personal": {"trusted_observations": personal.trusted_observations, "profile": personal.profile, "updated_at": personal.updated_at} if personal else None,
+        "peer": {"department": peer.department, "role": peer.role, "profile": peer.profile, "updated_at": peer.updated_at} if peer else None,
+    }
 
 
 @app.get("/api/v1/identities/{identity_id}/sessions")
