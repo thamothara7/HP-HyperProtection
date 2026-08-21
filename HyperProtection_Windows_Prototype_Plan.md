@@ -1,8 +1,8 @@
-# InsiderGuard — Windows-Only Insider Threat Detection & Adaptive Deception Prototype
+# HyperProtection — Windows-Only Insider Threat Detection & Adaptive Deception Prototype
 
 ## 1. Project Summary
 
-**InsiderGuard** is a Windows-focused, privacy-conscious insider-threat and compromised-account detection prototype.
+**HyperProtection** is a Windows-focused, privacy-conscious insider-threat and compromised-account detection prototype.
 
 The system is designed for a realistic enterprise scenario where an attacker or malicious employee may operate using **valid corporate credentials**. Traditional authentication can succeed because the username and password are correct, so the system continuously evaluates whether the authenticated activity still looks consistent with the expected user, session, device context, role, and historical behavior.
 
@@ -1703,7 +1703,7 @@ GET /simulation/scenarios
 # 34. Recommended Repository Structure
 
 ```text
-insiderguard/
+HyperProtection/
 │
 ├── backend/
 │   ├── app/
@@ -2911,7 +2911,7 @@ Block employee
 
 # 58. One-Minute Project Explanation
 
-> InsiderGuard is a privacy-conscious Windows security prototype for detecting insider threats and compromised employee accounts even when valid credentials are being used. Windows security telemetry is collected through native event logging and Windows Event Forwarding, normalized, pseudonymized, and correlated into user-session-device contexts. The system learns both personal and role-based behavior, uses Isolation Forest and robust statistical baselines to detect anomalies, and adds sequence analysis and explainable security rules to identify suspicious progression. A high anomaly score alone never triggers deception. The system first requires high contextual risk and evidence of an attack intent such as reconnaissance, credential hunting, lateral movement, or exfiltration. Only then can selected protected resources expose isolated synthetic decoys. If the suspicious context interacts with those decoys, confidence increases and only that session is contained, while legitimate sessions remain unaffected.
+> HyperProtection is a privacy-conscious Windows security prototype for detecting insider threats and compromised employee accounts even when valid credentials are being used. Windows security telemetry is collected through native event logging and Windows Event Forwarding, normalized, pseudonymized, and correlated into user-session-device contexts. The system learns both personal and role-based behavior, uses Isolation Forest and robust statistical baselines to detect anomalies, and adds sequence analysis and explainable security rules to identify suspicious progression. A high anomaly score alone never triggers deception. The system first requires high contextual risk and evidence of an attack intent such as reconnaissance, credential hunting, lateral movement, or exfiltration. Only then can selected protected resources expose isolated synthetic decoys. If the suspicious context interacts with those decoys, confidence increases and only that session is contained, while legitimate sessions remain unaffected.
 
 ---
 
