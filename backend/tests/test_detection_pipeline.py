@@ -6,6 +6,7 @@ from app.detection.intent import classify_intent
 from app.detection.rules import evaluate_rules
 from app.detection.sequence import SequenceMemory
 from app.features.extractor import extract_features
+from app.features.rolling import rolling_features
 from app.normalization.event import EventCategory, EventType, NormalizedEvent
 from app.policy.engine import deception_allowed
 from app.sessions.drift import within_session_drift
@@ -50,3 +51,12 @@ def test_rules_intent_and_drift_are_explainable() -> None:
     assert any(hit.code == "AUTH_FAILURE_BURST" for hit in rules)
     assert intent.intent == "CREDENTIAL_HUNTING"
     assert within_session_drift(earlier, current) > 0
+
+
+def test_rolling_windows_keep_longer_context_and_known_target_deviation() -> None:
+    events = [event(0, EventType.AUTH_SUCCESS, "FIN-01"), event(61, EventType.AUTH_SUCCESS, "FIN-01")]
+    windows = rolling_features(events, known_targets={"FIN-01"})
+    assert windows["5m"].successful_logins == 1
+    assert windows["1h"].successful_logins == 1
+    assert windows["24h"].successful_logins == 2
+    assert windows["5m"].new_server_count == 0

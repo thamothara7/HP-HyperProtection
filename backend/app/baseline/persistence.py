@@ -32,6 +32,7 @@ def load_personal_baseline(db: Session, identity_id: str) -> tuple[PersonalBasel
     profile = record.profile or {}
     return PersonalBaseline(
         known_devices=set(profile.get("known_devices", [])),
+        known_targets=set(profile.get("known_targets", [])),
         target_counts=[float(value) for value in profile.get("target_counts", [])],
         sensitive_reads=[float(value) for value in profile.get("sensitive_reads", [])],
         after_hours=[float(value) for value in profile.get("after_hours", [])],
@@ -64,6 +65,7 @@ def save_personal_baseline(
     profile.update(
         {
             "known_devices": sorted(baseline.known_devices),
+            "known_targets": sorted(baseline.known_targets),
             "target_counts": baseline.target_counts,
             "sensitive_reads": baseline.sensitive_reads,
             "after_hours": baseline.after_hours,

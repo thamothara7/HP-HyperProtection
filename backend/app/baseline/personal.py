@@ -9,16 +9,18 @@ class PersonalBaseline:
     """Compact trusted baseline. Lists are capped to resist both noise and poisoning."""
 
     known_devices: set[str] = field(default_factory=set)
+    known_targets: set[str] = field(default_factory=set)
     target_counts: list[float] = field(default_factory=list)
     sensitive_reads: list[float] = field(default_factory=list)
     after_hours: list[float] = field(default_factory=list)
     max_observations: int = 180
 
-    def update(self, *, device_id: str, target_count: float, sensitive_reads: float, after_hours: float, risk_score: int) -> None:
+    def update(self, *, device_id: str, target_count: float, sensitive_reads: float, after_hours: float, risk_score: int, targets: set[str] | None = None) -> None:
         if learning_weight(risk_score) == 0:
             return
         if learning_weight(risk_score) == 1:
             self.known_devices.add(device_id)
+            self.known_targets.update(targets or set())
         for values, value in ((self.target_counts, target_count), (self.sensitive_reads, sensitive_reads), (self.after_hours, after_hours)):
             if learning_weight(risk_score) == 1 or not values:
                 values.append(value)

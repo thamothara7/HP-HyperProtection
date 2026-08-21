@@ -89,7 +89,15 @@ def session_risk(session_id: str, db: Session = Depends(get_ready_db)) -> dict[s
 @app.get("/api/v1/sessions/{session_id}/features")
 def session_features(session_id: str, db: Session = Depends(get_ready_db)) -> dict[str, object]:
     detail = get_session_or_404(db, session_id)
-    return {"session_id": session_id, "new_hosts": detail.new_hosts, "remote_access_ratio": detail.remote_access_ratio, "privilege_attempts": detail.privilege_attempts, "baseline_comparison": detail.baseline_comparison}
+    record = db.get(SessionRecord, session_id)
+    return {
+        "session_id": session_id,
+        "new_hosts": detail.new_hosts,
+        "remote_access_ratio": detail.remote_access_ratio,
+        "privilege_attempts": detail.privilege_attempts,
+        "baseline_comparison": detail.baseline_comparison,
+        "features": record.features if record else {},
+    }
 
 
 @app.post("/api/v1/sessions/{session_id}/contain", response_model=ContainmentResponse)
