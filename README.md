@@ -38,3 +38,4 @@ This is not an attribution system: it detects behavioural inconsistency in an au
 
 Stage 2 replaces the in-memory simulation state with normalized events, session correlation, SQLite persistence, and a live WebSocket stream. Windows Event Log ingestion begins only after that path is testable end-to-end.
 # HP-HyperProtection
+# HP-HyperProtection
