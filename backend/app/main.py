@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -16,6 +16,7 @@ from app.deception.decoy_data import DECOYS, decoy_payload
 from app.policy.engine import deception_allowed
 from app.ingestion import ingest_event
 from app.normalization.event import NormalizedEvent
+from app.realtime import hub
 
 
 @asynccontextmanager
@@ -92,11 +93,13 @@ def session_features(session_id: str, db: Session = Depends(get_ready_db)) -> di
 
 
 @app.post("/api/v1/sessions/{session_id}/contain", response_model=ContainmentResponse)
-def contain_session(session_id: str, db: Session = Depends(get_ready_db)) -> ContainmentResponse:
+async def contain_session(session_id: str, db: Session = Depends(get_ready_db)) -> ContainmentResponse:
     summary = contain(db, session_id)
     if summary is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    return ContainmentResponse(session=summary, action="REVOKE_APPLICATION_SESSION", message="The suspicious application session was contained. The identity remains active on other contexts.")
+    response = ContainmentResponse(session=summary, action="REVOKE_APPLICATION_SESSION", message="The suspicious application session was contained. The identity remains active on other contexts.")
+    await hub.publish("incidents", {"type": "SESSION_CONTAINED", "session_id": summary.id, "identity_id": summary.identity_id, "risk_score": summary.risk_score})
+    return response
 
 
 @app.get("/api/v1/events")
@@ -106,7 +109,7 @@ def events(limit: int = 100, db: Session = Depends(get_ready_db)) -> list[dict[s
 
 
 @app.post("/api/v1/events", response_model=SessionDetail, status_code=201)
-def ingest_normalized_event(event: NormalizedEvent, db: Session = Depends(get_ready_db)) -> SessionDetail:
+async def ingest_normalized_event(event: NormalizedEvent, db: Session = Depends(get_ready_db)) -> SessionDetail:
     """Ingestion boundary for real normalized Windows metadata and approved collectors."""
     try:
         session = ingest_event(db, event)
@@ -115,7 +118,34 @@ def ingest_normalized_event(event: NormalizedEvent, db: Session = Depends(get_re
     detail = session_detail(db, session.id)
     if detail is None:
         raise HTTPException(status_code=500, detail="Session was not available after ingestion")
+    await hub.publish("events", {"type": "NORMALIZED_EVENT", "event_id": event.event_id, "timestamp": event.timestamp.isoformat(), "identity_id": event.identity_id, "session_id": detail.id, "device_id": event.device_id, "event_type": event.event_type.value, "target": event.target, "result": event.result})
+    await hub.publish("risk", {"type": "SESSION_RISK_UPDATED", "session_id": detail.id, "identity_id": detail.identity_id, "risk_score": detail.risk_score, "anomaly_score": detail.anomaly_score, "sequence_score": detail.sequence_score, "intent": detail.intent.value, "status": detail.status.value})
     return detail
+
+
+async def websocket_topic(websocket: WebSocket, topic: str) -> None:
+    await hub.connect(topic, websocket)
+    try:
+        while True:
+            # The stream is server-driven; receive keeps the connection alive.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        await hub.disconnect(topic, websocket)
+
+
+@app.websocket("/ws/events")
+async def events_stream(websocket: WebSocket) -> None:
+    await websocket_topic(websocket, "events")
+
+
+@app.websocket("/ws/risk")
+async def risk_stream(websocket: WebSocket) -> None:
+    await websocket_topic(websocket, "risk")
+
+
+@app.websocket("/ws/incidents")
+async def incident_stream(websocket: WebSocket) -> None:
+    await websocket_topic(websocket, "incidents")
 
 
 @app.get("/api/v1/identities")
