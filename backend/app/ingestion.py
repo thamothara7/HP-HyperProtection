@@ -1,5 +1,5 @@
 """Durable normalized-event ingestion and session-scoped evaluation."""
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -45,7 +45,7 @@ def ingest_event(db: Session, event: NormalizedEvent) -> SessionRecord:
     db.add(EventRecord(id=event.event_id, timestamp=event.timestamp, identity_id=event.identity_id, session_id=session_id, device_id=event.device_id, event_type=event.event_type.value, event_category=event.event_category.value, source=event.source, target=event.target, resource_type=event.resource_type, resource_sensitivity=event.resource_sensitivity, action=event.action, result=event.result, metadata_json=event.metadata))
     # The session factory deliberately disables autoflush. Evaluation must include this event.
     db.flush()
-    session.last_seen = max(session.last_seen, event.timestamp)
+    session.last_seen = max(_as_utc(session.last_seen), event.timestamp)
     if event.event_type is EventType.LOGOFF:
         session.closed_at = event.timestamp
     _evaluate(db, session)
@@ -56,7 +56,7 @@ def ingest_event(db: Session, event: NormalizedEvent) -> SessionRecord:
 
 def _evaluate(db: Session, session: SessionRecord) -> None:
     records = db.scalars(select(EventRecord).where(EventRecord.session_id == session.id).order_by(EventRecord.timestamp)).all()
-    normalized = [NormalizedEvent(event_id=item.id, timestamp=item.timestamp, identity_id=item.identity_id, session_id=item.session_id, device_id=item.device_id, event_type=EventType(item.event_type), event_category=EventCategory(item.event_category), source=item.source, target=item.target, resource_type=item.resource_type, resource_sensitivity=item.resource_sensitivity, action=item.action, result=item.result, metadata=item.metadata_json) for item in records]
+    normalized = [NormalizedEvent(event_id=item.id, timestamp=_as_utc(item.timestamp), identity_id=item.identity_id, session_id=item.session_id, device_id=item.device_id, event_type=EventType(item.event_type), event_category=EventCategory(item.event_category), source=item.source, target=item.target, resource_type=item.resource_type, resource_sensitivity=item.resource_sensitivity, action=item.action, result=item.result, metadata=item.metadata_json) for item in records]
     if not normalized:
         return
     personal, personal_record = load_personal_baseline(db, session.identity_id)
@@ -129,3 +129,8 @@ def _evaluate(db: Session, session: SessionRecord) -> None:
     peer.update(features, risk.score)
     save_personal_baseline(db, identity_id=session.identity_id, baseline=personal, record=personal_record, features=features, risk_score=risk.score)
     save_peer_profile(db, peer, peer_record)
+
+
+def _as_utc(value: datetime) -> datetime:
+    """SQLite returns naive timestamps even for timezone-aware SQLAlchemy columns."""
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

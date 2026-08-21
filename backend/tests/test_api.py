@@ -20,3 +20,17 @@ def test_containment_does_not_change_identity_scope() -> None:
     body = response.json()
     assert body["action"] == "REVOKE_APPLICATION_SESSION"
     assert body["session"]["id"] == "SES-C441"
+
+
+def test_simulation_runs_through_persisted_ingestion() -> None:
+    response = client.post("/api/v1/simulation/run", json={"scenario_id": "low-and-slow"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["generated"] is True
+    assert body["sessions"][0]["sequence_score"] == 100
+
+
+def test_identity_baseline_endpoint_exposes_learning_policy() -> None:
+    response = client.get("/api/v1/identities/USR-A12/baseline")
+    assert response.status_code == 200
+    assert response.json()["learning_policy"]["frozen_above"] == 50

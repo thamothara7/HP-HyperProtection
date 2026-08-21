@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,16 +7,17 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.bootstrap import create_schema, seed_demo_if_empty
-from app.db.models import BaselineProfileRecord, DecoyInteractionRecord, EventRecord, IdentityRecord, IncidentRecord, PeerBaselineRecord, SessionRecord
+from app.db.models import ApprovalRecord, BaselineProfileRecord, DecoyInteractionRecord, EventRecord, IdentityRecord, IncidentRecord, IntentDetectionRecord, PeerBaselineRecord, ResponseActionRecord, RiskSnapshotRecord, SessionRecord
 from app.db.repository import contain, list_session_details, session_detail, session_summary
 from app.db.session import SessionLocal
-from app.schemas import ContainmentResponse, OverviewResponse, Scenario, SessionDetail
+from app.schemas import ApprovalRequest, ContainmentResponse, OverviewResponse, Scenario, SessionDetail, SimulationRunRequest
 from app.simulation.store import SCENARIOS
 from app.deception.decoy_data import DECOYS, decoy_payload
 from app.policy.engine import deception_allowed
 from app.ingestion import ingest_event
 from app.normalization.event import NormalizedEvent
 from app.realtime import hub
+from app.simulation.runner import run_scenario
 
 
 @asynccontextmanager
@@ -61,7 +62,14 @@ def overview(db: Session = Depends(get_ready_db)) -> OverviewResponse:
     active = db.scalar(select(func.count()).select_from(SessionRecord).where(SessionRecord.closed_at.is_(None))) or 0
     elevated = sum(31 <= detail.risk_score <= 74 for detail in details)
     critical = sum(detail.risk_score >= 75 for detail in details)
-    activity = [12, 15, 18, 17, 22, 31, 28, 35, 42, 39, 46, 55, 49, 61, 59, 68, 74, 71, 88, 96, 87, 91, 82, 97]
+    now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+    activity = [0] * 24
+    snapshots = db.scalars(select(RiskSnapshotRecord).where(RiskSnapshotRecord.recorded_at >= now - timedelta(hours=23))).all()
+    for snapshot in snapshots:
+        recorded_at = snapshot.recorded_at.replace(tzinfo=UTC) if snapshot.recorded_at.tzinfo is None else snapshot.recorded_at.astimezone(UTC)
+        offset = int((recorded_at.replace(minute=0, second=0, microsecond=0) - (now - timedelta(hours=23))).total_seconds() // 3600)
+        if 0 <= offset < len(activity):
+            activity[offset] = max(activity[offset], snapshot.risk_score)
     return OverviewResponse(active_sessions=active, elevated_sessions=elevated, critical_sessions=critical, risk_activity=activity, attention_sessions=[session_summary(db.get(SessionRecord, detail.id)) for detail in attention], generated_at=datetime.now(UTC))
 
 
@@ -198,9 +206,65 @@ def incidents(db: Session = Depends(get_ready_db)) -> list[dict[str, object]]:
     return [{"id": item.id, "session_id": item.session_id, "title": item.title, "severity": item.severity, "status": item.status, "summary": item.summary, "created_at": item.created_at} for item in db.scalars(select(IncidentRecord).order_by(IncidentRecord.created_at.desc())).all()]
 
 
+@app.get("/api/v1/incidents/{incident_id}")
+def incident(incident_id: str, db: Session = Depends(get_ready_db)) -> dict[str, object]:
+    record = db.get(IncidentRecord, incident_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    detail = get_session_or_404(db, record.session_id)
+    return {
+        "id": record.id,
+        "session_id": record.session_id,
+        "title": record.title,
+        "severity": record.severity,
+        "status": record.status,
+        "summary": record.summary,
+        "created_at": record.created_at,
+        "session": detail,
+    }
+
+
+@app.get("/api/v1/deception/sessions")
+def deception_sessions(db: Session = Depends(get_ready_db)) -> list[dict[str, object]]:
+    records = db.scalars(select(SessionRecord).where(SessionRecord.status.in_(["DECEPTION_ELIGIBLE", "DECEPTION", "CONTAINED"])).order_by(SessionRecord.risk_score.desc())).all()
+    return [session_summary(record).model_dump() for record in records]
+
+
+@app.get("/api/v1/deception/resources")
+def deception_resources() -> list[dict[str, object]]:
+    return [{"path": resource.path, "title": resource.title, "content_type": resource.content_type, "synthetic": resource.synthetic} for resource in DECOYS.values()]
+
+
 @app.get("/api/v1/deception/interactions")
 def decoy_interactions(db: Session = Depends(get_ready_db)) -> list[dict[str, object]]:
     return [{"session_id": item.session_id, "resource": item.resource, "action": item.action, "confidence_delta": item.confidence_delta, "observed_at": item.observed_at} for item in db.scalars(select(DecoyInteractionRecord).order_by(DecoyInteractionRecord.observed_at.desc())).all()]
+
+
+@app.get("/api/v1/policies")
+def policies() -> list[dict[str, object]]:
+    return [
+        {"id": "deception-eligibility", "name": "Deception eligibility", "scope": "Risk + eligible intent + confidence + no verified override", "state": "ENFORCED"},
+        {"id": "session-containment", "name": "Application session containment", "scope": "Revoke only the suspicious application context", "state": "ENFORCED"},
+        {"id": "legitimate-override", "name": "Legitimate operation override", "scope": "Suppress deception while monitoring continues", "state": "ENFORCED"},
+    ]
+
+
+@app.get("/api/v1/approvals")
+def approvals(db: Session = Depends(get_ready_db)) -> list[dict[str, object]]:
+    return [{"id": item.id, "identity_id": item.identity_id, "approval_type": item.approval_type, "active": item.active, "expires_at": item.expires_at, "reason": item.reason} for item in db.scalars(select(ApprovalRecord).order_by(ApprovalRecord.id.desc())).all()]
+
+
+@app.post("/api/v1/approvals", status_code=201)
+def create_approval(payload: ApprovalRequest, db: Session = Depends(get_ready_db)) -> dict[str, object]:
+    if db.get(IdentityRecord, payload.identity_id) is None:
+        raise HTTPException(status_code=404, detail="Identity not found")
+    approval = ApprovalRecord(identity_id=payload.identity_id, approval_type=payload.approval_type, reason=payload.reason, expires_at=payload.expires_at)
+    db.add(approval)
+    for session in db.scalars(select(SessionRecord).where(SessionRecord.identity_id == payload.identity_id, SessionRecord.closed_at.is_(None))).all():
+        session.approved_override = True
+    db.commit()
+    db.refresh(approval)
+    return {"id": approval.id, "identity_id": approval.identity_id, "approval_type": approval.approval_type, "active": approval.active, "expires_at": approval.expires_at, "reason": approval.reason}
 
 
 @app.get("/corp/{path:path}")
@@ -224,8 +288,30 @@ def scenarios() -> list[Scenario]:
 
 @app.post("/api/v1/simulation/reset")
 def reset_simulation(db: Session = Depends(get_ready_db)) -> dict[str, str]:
+    simulated_ids = list(db.scalars(select(SessionRecord.id).where(SessionRecord.id.like("SIM-%"))).all())
+    if simulated_ids:
+        for model in (RiskSnapshotRecord, IntentDetectionRecord, DecoyInteractionRecord, ResponseActionRecord):
+            db.query(model).where(model.session_id.in_(simulated_ids)).delete(synchronize_session=False)
+        db.query(EventRecord).where(EventRecord.session_id.in_(simulated_ids)).delete(synchronize_session=False)
+        db.query(SessionRecord).where(SessionRecord.id.in_(simulated_ids)).delete(synchronize_session=False)
+        db.query(BaselineProfileRecord).where(BaselineProfileRecord.identity_id.like("USR-DEMO-%")).delete(synchronize_session=False)
+        db.query(IdentityRecord).where(IdentityRecord.id.like("USR-DEMO-%")).delete(synchronize_session=False)
     db.query(EventRecord).where(EventRecord.id.like("EVT-SES-%")).delete(synchronize_session=False)
     db.query(SessionRecord).where(SessionRecord.id.like("SES-%")).delete(synchronize_session=False)
     db.commit()
     seed_demo_if_empty(db)
     return {"status": "reset"}
+
+
+@app.post("/api/v1/simulation/run")
+async def simulation_run(payload: SimulationRunRequest, db: Session = Depends(get_ready_db)) -> dict[str, object]:
+    if not any(scenario.id == payload.scenario_id for scenario in SCENARIOS):
+        raise HTTPException(status_code=404, detail="Simulation scenario not found")
+    try:
+        session_ids = run_scenario(db, payload.scenario_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    sessions = [get_session_or_404(db, session_id) for session_id in session_ids]
+    for session in sessions:
+        await hub.publish("risk", {"type": "SESSION_RISK_UPDATED", "session_id": session.id, "identity_id": session.identity_id, "risk_score": session.risk_score, "anomaly_score": session.anomaly_score, "sequence_score": session.sequence_score, "intent": session.intent.value, "status": session.status.value})
+    return {"scenario_id": payload.scenario_id, "session_ids": session_ids, "sessions": sessions, "generated": True}

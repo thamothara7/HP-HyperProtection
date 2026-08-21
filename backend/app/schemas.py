@@ -82,3 +82,14 @@ class ContainmentResponse(BaseModel):
     session: SessionSummary
     action: str
     message: str
+
+
+class SimulationRunRequest(BaseModel):
+    scenario_id: str
+
+
+class ApprovalRequest(BaseModel):
+    identity_id: str
+    approval_type: str
+    reason: str = Field(min_length=3, max_length=1000)
+    expires_at: datetime | None = None
