@@ -11,6 +11,9 @@ This first vertical slice establishes the contract between the SOC console and t
 - Explainable investigation console with risk activity, evidence, intent, comparison, and containment state
 - An approved bulk-operation scenario that stays high-risk but is not a deception candidate
 - Session-only containment API; no identity-wide account disablement
+- SQLite-backed SQLAlchemy persistence for identities, devices, sessions, events, baselines, risk/intent snapshots, incidents, approvals, responses, and decoy interactions
+- Alembic migration entry point and an API-backed controlled corporate-resource gateway
+- Explainable rule, sequence-memory, intent, rolling-feature, baseline-poisoning, drift, risk-composition, and Isolation Forest modules
 
 ## Run locally
 
@@ -34,6 +37,6 @@ Open `http://localhost:5173`.
 
 This is not an attribution system: it detects behavioural inconsistency in an authenticated context. It collects neither keystrokes, passwords, screenshots, recordings, personal content, nor biometric signals. The forthcoming controlled deception feature will apply only to resources behind the corporate application's policy gateway; it cannot redirect arbitrary Windows traffic.
 
-## Next implementation stage
+## Current implementation boundary
 
-Stage 2 replaces the in-memory simulation state with normalized events, session correlation, SQLite persistence, and a live WebSocket stream. Windows Event Log ingestion begins only after that path is testable end-to-end.
+The dashboard's safe demo seed data is now persisted to SQLite. The next increment connects normalized event ingestion to the feature/detection pipeline and emits real-time updates; pywin32 local Security-log reading follows that event path. WEF/WEC and optional Sysmon remain later integrations, and Sysmon is never described as agentless.
