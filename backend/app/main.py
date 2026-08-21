@@ -1,23 +1,23 @@
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
-from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.bootstrap import create_schema, seed_demo_if_empty
+from app.db.dependencies import get_ready_db
 from app.db.models import ApprovalRecord, BaselineProfileRecord, DecoyInteractionRecord, EventRecord, IdentityRecord, IncidentRecord, IntentDetectionRecord, PeerBaselineRecord, ResponseActionRecord, RiskSnapshotRecord, SessionRecord
 from app.db.repository import contain, list_session_details, session_detail, session_summary
 from app.db.session import SessionLocal
 from app.schemas import ApprovalRequest, ContainmentResponse, OverviewResponse, Scenario, SessionDetail, SimulationRunRequest
 from app.simulation.store import SCENARIOS
-from app.deception.decoy_data import DECOYS, decoy_payload
-from app.policy.engine import deception_allowed
 from app.ingestion import ingest_event
 from app.normalization.event import NormalizedEvent
 from app.realtime import hub
 from app.simulation.runner import run_scenario
+from app.corporate.router import router as corporate_router
 
 
 @asynccontextmanager
@@ -30,6 +30,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="HP-HyperProtection API", version="0.2.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.include_router(corporate_router)
 
 
 def get_session_or_404(db: Session, session_id: str) -> SessionDetail:
@@ -37,17 +38,6 @@ def get_session_or_404(db: Session, session_id: str) -> SessionDetail:
     if detail is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return detail
-
-
-def get_ready_db():
-    """Keeps scripts and test clients usable even when their lifespan is not entered."""
-    create_schema()
-    db = SessionLocal()
-    try:
-        seed_demo_if_empty(db)
-        yield db
-    finally:
-        db.close()
 
 
 @app.get("/health")
@@ -265,20 +255,6 @@ def create_approval(payload: ApprovalRequest, db: Session = Depends(get_ready_db
     db.commit()
     db.refresh(approval)
     return {"id": approval.id, "identity_id": approval.identity_id, "approval_type": approval.approval_type, "active": approval.active, "expires_at": approval.expires_at, "reason": approval.reason}
-
-
-@app.get("/corp/{path:path}")
-def corporate_resource(path: str, x_insiderguard_session: str = Header(), db: Session = Depends(get_ready_db)) -> dict[str, object]:
-    """Policy enforcement point for the controlled demo application only."""
-    detail = get_session_or_404(db, x_insiderguard_session)
-    decision = deception_allowed(risk_score=detail.risk_score, intent=detail.intent.value, intent_confidence=detail.intent_confidence, strong_legitimate_override=detail.approved_override)
-    resource_path = f"/{path}"
-    if decision.allow_decoy and resource_path in DECOYS:
-        resource = DECOYS[resource_path]
-        db.add(DecoyInteractionRecord(session_id=detail.id, resource=resource.path, action="ACCESSED", confidence_delta=12))
-        db.commit()
-        return {"route": "DECOY", "policy_reason": decision.reason, "payload": decoy_payload(resource)}
-    return {"route": "REAL", "policy_reason": decision.reason, "resource": resource_path, "content": "Controlled corporate application response."}
 
 
 @app.get("/api/v1/simulation/scenarios", response_model=list[Scenario])

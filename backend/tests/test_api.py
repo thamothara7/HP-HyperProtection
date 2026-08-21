@@ -1,5 +1,10 @@
+from datetime import UTC, datetime
 from fastapi.testclient import TestClient
+from uuid import uuid4
 
+from app.db.bootstrap import create_schema
+from app.db.models import DecoyInteractionRecord, DeviceRecord, IdentityRecord, IncidentRecord, ResponseActionRecord, SessionRecord
+from app.db.session import SessionLocal
 from app.main import app
 
 client = TestClient(app)
@@ -34,3 +39,31 @@ def test_identity_baseline_endpoint_exposes_learning_policy() -> None:
     response = client.get("/api/v1/identities/USR-A12/baseline")
     assert response.status_code == 200
     assert response.json()["learning_policy"]["frozen_above"] == 50
+
+
+def test_honey_attempt_contain_only_the_eligible_application_session() -> None:
+    create_schema()
+    suffix = uuid4().hex
+    identity_id, device_id, session_id = f"USR-DECOY-{suffix}", f"DEV-DECOY-{suffix}", f"SES-DECOY-{suffix}"
+    with SessionLocal() as db:
+        db.add(IdentityRecord(id=identity_id, department="Test", role="Analyst"))
+        db.add(DeviceRecord(id=device_id, trust_level="UNKNOWN"))
+        db.add(SessionRecord(id=session_id, identity_id=identity_id, device_id=device_id, started_at=datetime.now(UTC), last_seen=datetime.now(UTC), risk_score=82, intent="CREDENTIAL_HUNTING", intent_confidence=.91, status="DECEPTION_ELIGIBLE", features={}, evidence=[]))
+        db.commit()
+    headers = {"X-HyperProtection-Session": session_id}
+    decoy = client.get("/admin/credentials", headers=headers)
+    assert decoy.status_code == 200
+    assert decoy.json()["route"] == "DECOY"
+    attempt = client.post("/admin/credentials/attempt", headers=headers, json={"credential_id": "HP-DECOY-CRED-2026-01"})
+    assert attempt.status_code == 200
+    assert attempt.json()["contained"] is True
+    with SessionLocal() as db:
+        assert db.get(SessionRecord, session_id).is_contained is True
+        assert db.query(IncidentRecord).filter_by(session_id=session_id).count() == 1
+        db.query(DecoyInteractionRecord).where(DecoyInteractionRecord.session_id == session_id).delete()
+        db.query(ResponseActionRecord).where(ResponseActionRecord.session_id == session_id).delete()
+        db.query(IncidentRecord).where(IncidentRecord.session_id == session_id).delete()
+        db.query(SessionRecord).where(SessionRecord.id == session_id).delete()
+        db.query(IdentityRecord).where(IdentityRecord.id == identity_id).delete()
+        db.query(DeviceRecord).where(DeviceRecord.id == device_id).delete()
+        db.commit()
