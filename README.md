@@ -1,6 +1,6 @@
-# InsiderGuard
+# Hyperprotection
 
-InsiderGuard is a Windows-focused, privacy-conscious insider-threat and compromised-account detection platform. It evaluates **identity × session × device context** after authentication, then contains only the risky application session when evidence warrants it.
+Hyperprotection is a Windows-focused, privacy-conscious insider-threat and compromised-account detection platform. It evaluates **identity × session × device context** after authentication, then contains only the risky application session when evidence warrants it.
 
 It does not claim to prove the physical person behind a session. It detects behavioral inconsistency using security metadata.
 
@@ -12,10 +12,12 @@ It does not claim to prove the physical person behind a session. It detects beha
 - Trusted baseline primitives, peer comparison, robust statistics, poisoning safeguards, rolling features, within-session drift, explainable rules, sequence memory, intent assessment, risk composition, and Isolation Forest wrapper
 - Controlled corporate-resource gateway that routes only eligible application requests to synthetic decoys
 - Session-only containment and audited response action records
+- `POST /api/v1/events` ingestion boundary for original normalized security metadata; no fabricated employee data enters this path
+- Windows Security Event XML parser and a Windows-only pywin32 local Security-log reader adapter
 
 ## Privacy and safety
 
-InsiderGuard does **not** collect keystrokes, passwords, screen/video recordings, webcams, microphones, chat messages, or document contents. Analytics use pseudonymous identities and security-relevant metadata.
+Hyperprotection does **not** collect keystrokes, passwords, screen/video recordings, webcams, microphones, chat messages, or document contents. Analytics use pseudonymous identities and security-relevant metadata.
 
 High anomaly is not a maliciousness verdict. Deception requires high session risk, a deception-eligible intent, sufficient intent confidence, and no verified legitimate override. The controlled gateway cannot redirect arbitrary Windows traffic.
 
@@ -56,6 +58,7 @@ cd frontend && npm run build
 | Session decision data | `GET /api/v1/sessions/{id}/risk`, `/features`, `/timeline` |
 | Session containment | `POST /api/v1/sessions/{id}/contain` |
 | Telemetry | `GET /api/v1/events` |
+| Real telemetry ingestion | `POST /api/v1/events` with the normalized event model |
 | Identities | `GET /api/v1/identities`, `/api/v1/identities/{id}/sessions` |
 | Deception evidence | `GET /api/v1/deception/interactions` |
 | Simulation | `GET /api/v1/simulation/scenarios`, `POST /api/v1/simulation/reset` |
@@ -65,7 +68,7 @@ cd frontend && npm run build
 ```text
 backend/app/     API, persistence, detection, policy, decoy modules
 backend/tests/   API, policy, detection, baseline and sequence tests
-frontend/        React/Vite SOC console and InsiderGuard brand assets
+frontend/        React/Vite SOC console and Hyperprotection brand assets
 docs/            Architecture and UI research notes
 ```
 

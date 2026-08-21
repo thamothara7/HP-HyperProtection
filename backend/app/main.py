@@ -14,6 +14,8 @@ from app.schemas import ContainmentResponse, OverviewResponse, Scenario, Session
 from app.simulation.store import SCENARIOS
 from app.deception.decoy_data import DECOYS, decoy_payload
 from app.policy.engine import deception_allowed
+from app.ingestion import ingest_event
+from app.normalization.event import NormalizedEvent
 
 
 @asynccontextmanager
@@ -101,6 +103,19 @@ def contain_session(session_id: str, db: Session = Depends(get_ready_db)) -> Con
 def events(limit: int = 100, db: Session = Depends(get_ready_db)) -> list[dict[str, object]]:
     records = db.scalars(select(EventRecord).order_by(EventRecord.timestamp.desc()).limit(min(max(limit, 1), 500))).all()
     return [{"event_id": record.id, "timestamp": record.timestamp, "identity_id": record.identity_id, "session_id": record.session_id, "device_id": record.device_id, "event_type": record.event_type, "source": record.source, "target": record.target, "action": record.action, "result": record.result} for record in records]
+
+
+@app.post("/api/v1/events", response_model=SessionDetail, status_code=201)
+def ingest_normalized_event(event: NormalizedEvent, db: Session = Depends(get_ready_db)) -> SessionDetail:
+    """Ingestion boundary for real normalized Windows metadata and approved collectors."""
+    try:
+        session = ingest_event(db, event)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    detail = session_detail(db, session.id)
+    if detail is None:
+        raise HTTPException(status_code=500, detail="Session was not available after ingestion")
+    return detail
 
 
 @app.get("/api/v1/identities")
