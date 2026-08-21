@@ -1,42 +1,74 @@
-# HP-HyperProtection
+# InsiderGuard
 
-HP-HyperProtection is a Windows-focused, privacy-conscious prototype for detecting risky authenticated behaviour at the **identity × session × device-context** level.
+InsiderGuard is a Windows-focused, privacy-conscious insider-threat and compromised-account detection platform. It evaluates **identity × session × device context** after authentication, then contains only the risky application session when evidence warrants it.
 
-This first vertical slice establishes the contract between the SOC console and the detection pipeline. It uses safe synthetic scenarios while the telemetry, database, baseline, and model layers are built incrementally.
+It does not claim to prove the physical person behind a session. It detects behavioral inconsistency using security metadata.
 
-## What is working now
+## Current capabilities
 
-- FastAPI API with typed session, intent, evidence timeline, and overview contracts
-- Simulated concurrent Alice sessions: `MGR-PC` remains normal while `EMP-PC-22` is contained
-- Explainable investigation console with risk activity, evidence, intent, comparison, and containment state
-- An approved bulk-operation scenario that stays high-risk but is not a deception candidate
-- Session-only containment API; no identity-wide account disablement
-- SQLite-backed SQLAlchemy persistence for identities, devices, sessions, events, baselines, risk/intent snapshots, incidents, approvals, responses, and decoy interactions
-- Alembic migration entry point and an API-backed controlled corporate-resource gateway
-- Explainable rule, sequence-memory, intent, rolling-feature, baseline-poisoning, drift, risk-composition, and Isolation Forest modules
+- SOC console: overview, sessions, identities, incidents, telemetry, baselines, decoys, policy, and simulation views
+- Typed FastAPI API with SQLite + SQLAlchemy storage and Alembic migration entry point
+- Normalized event contract and session correlation primitives
+- Trusted baseline primitives, peer comparison, robust statistics, poisoning safeguards, rolling features, within-session drift, explainable rules, sequence memory, intent assessment, risk composition, and Isolation Forest wrapper
+- Controlled corporate-resource gateway that routes only eligible application requests to synthetic decoys
+- Session-only containment and audited response action records
 
-## Run locally
+## Privacy and safety
 
-Use two terminals.
+InsiderGuard does **not** collect keystrokes, passwords, screen/video recordings, webcams, microphones, chat messages, or document contents. Analytics use pseudonymous identities and security-relevant metadata.
+
+High anomaly is not a maliciousness verdict. Deception requires high session risk, a deception-eligible intent, sufficient intent confidence, and no verified legitimate override. The controlled gateway cannot redirect arbitrary Windows traffic.
+
+## Local setup
+
+Requirements: Python 3.12+, Node.js 20+, npm.
 
 ```bash
-cd backend
+git clone https://github.com/thamothara7/HP-HyperProtection.git
+cd HP-HyperProtection/backend
 python3 -m pip install -e '.[dev]'
-python3 -m uvicorn app.main:app --reload --port 8000
+python3 -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
+In a second terminal:
+
 ```bash
-cd frontend
+cd HP-HyperProtection/frontend
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`.
+Open the Vite URL shown in the terminal (normally `http://localhost:5173`).
 
-## Safety boundary
+## Verify
 
-This is not an attribution system: it detects behavioural inconsistency in an authenticated context. It collects neither keystrokes, passwords, screenshots, recordings, personal content, nor biometric signals. The forthcoming controlled deception feature will apply only to resources behind the corporate application's policy gateway; it cannot redirect arbitrary Windows traffic.
+```bash
+cd backend && python3 -m pytest -q
+cd frontend && npm run build
+```
 
-## Current implementation boundary
+## API quick reference
 
-The dashboard's safe demo seed data is now persisted to SQLite. The next increment connects normalized event ingestion to the feature/detection pipeline and emits real-time updates; pywin32 local Security-log reading follows that event path. WEF/WEC and optional Sysmon remain later integrations, and Sysmon is never described as agentless.
+| Area | Endpoint |
+| --- | --- |
+| Overview | `GET /api/v1/overview` |
+| Sessions | `GET /api/v1/sessions`, `GET /api/v1/sessions/{id}` |
+| Session decision data | `GET /api/v1/sessions/{id}/risk`, `/features`, `/timeline` |
+| Session containment | `POST /api/v1/sessions/{id}/contain` |
+| Telemetry | `GET /api/v1/events` |
+| Identities | `GET /api/v1/identities`, `/api/v1/identities/{id}/sessions` |
+| Deception evidence | `GET /api/v1/deception/interactions` |
+| Simulation | `GET /api/v1/simulation/scenarios`, `POST /api/v1/simulation/reset` |
+
+## Repository layout
+
+```text
+backend/app/     API, persistence, detection, policy, decoy modules
+backend/tests/   API, policy, detection, baseline and sequence tests
+frontend/        React/Vite SOC console and InsiderGuard brand assets
+docs/            Architecture and UI research notes
+```
+
+## Next backend work
+
+Connect normalized event ingestion to durable session correlation and the feature/risk pipeline, add WebSocket streams, then implement the local pywin32 Security Event Log reader. WEF/WEC follows that local reader; Sysmon remains optional enrichment and is not agentless telemetry.
