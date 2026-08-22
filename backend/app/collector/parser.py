@@ -41,12 +41,14 @@ def parse_windows_event_xml(xml: str, *, source: str, pseudonymizer: Pseudonymiz
     if not sid or sid in {"S-1-0-0", "-"}:
         return None
     timestamp = datetime.fromisoformat(time_element.attrib["SystemTime"].replace("Z", "+00:00")).astimezone(UTC)
+    computer = system.findtext("e:Computer", default=source, namespaces=namespace) or source
+    record_id = system.findtext("e:EventRecordID", default="", namespaces=namespace)
     event_type, category, action = mapping
     logon_id = data.get("TargetLogonId") or data.get("SubjectLogonId")
     target = data.get("WorkstationName") or data.get("IpAddress") or data.get("ShareName") or None
     return NormalizedEvent(
-        event_id=f"win-{source}-{event_id}-{timestamp.timestamp():.6f}", timestamp=timestamp,
-        identity_id=pseudonymizer.identity_id(sid), device_id=source, source=source,
+        event_id=f"win-{computer}-{record_id}" if record_id else f"win-{computer}-{event_id}-{timestamp.timestamp():.6f}", timestamp=timestamp,
+        identity_id=pseudonymizer.identity_id(sid), device_id=computer, source=computer,
         session_id=f"WIN-{logon_id}" if logon_id and logon_id != "0x0" else None,
         event_type=event_type, event_category=category, target=target,
         resource_type="NETWORK_SHARE" if event_id in {5140, 5145} else None,

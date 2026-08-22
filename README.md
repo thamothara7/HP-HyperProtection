@@ -10,10 +10,10 @@ It does not claim to prove the physical person behind a session. It detects beha
 - Typed FastAPI API with SQLite + SQLAlchemy storage and Alembic migration entry point
 - Normalized event contract and session correlation primitives
 - Trusted baseline primitives, peer comparison, robust statistics, poisoning safeguards, rolling features, within-session drift, explainable rules, sequence memory, intent assessment, risk composition, and Isolation Forest wrapper
-- Controlled corporate-resource gateway that routes only eligible application requests to synthetic decoys
-- Session-only containment and audited response action records
+- Controlled corporate application routes (`/dashboard`, `/reports`, `/admin`, `/files`, `/export`) that route only eligible application contexts to synthetic decoys
+- Synthetic honey-credential evidence, critical incident creation, session-only containment, and audited response action records
 - `POST /api/v1/events` ingestion boundary for original normalized security metadata; no fabricated employee data enters this path
-- Windows Security Event XML parser and a Windows-only pywin32 local Security-log reader adapter
+- Windows Security/ForwardedEvents XML parser and a Windows-only pywin32 collector service with bounded idempotency state
 
 ## Privacy and safety
 
@@ -61,7 +61,8 @@ cd frontend && npm run build
 | Real telemetry ingestion | `POST /api/v1/events` with the normalized event model |
 | Identities | `GET /api/v1/identities`, `/api/v1/identities/{id}/sessions` |
 | Deception evidence | `GET /api/v1/deception/interactions` |
-| Simulation | `GET /api/v1/simulation/scenarios`, `POST /api/v1/simulation/reset` |
+| Corporate application | `GET /dashboard`, `/reports`, `/admin`, `/files/...`, `/export` with `X-HyperProtection-Session` |
+| Simulation | `GET /api/v1/simulation/scenarios`, `POST /api/v1/simulation/run`, `POST /api/v1/simulation/reset` |
 
 ## Repository layout
 
@@ -72,6 +73,6 @@ frontend/        React/Vite SOC console and Hyperprotection brand assets
 docs/            Architecture and UI research notes
 ```
 
-## Next backend work
+## Windows deployment
 
-Connect normalized event ingestion to durable session correlation and the feature/risk pipeline, add WebSocket streams, then implement the local pywin32 Security Event Log reader. WEF/WEC follows that local reader; Sysmon remains optional enrichment and is not agentless telemetry.
+The local and WEF/WEC collection procedure is in [docs/windows-telemetry.md](docs/windows-telemetry.md). It explicitly documents collection scope and Windows telemetry limitations. Sysmon remains optional enrichment and is not agentless telemetry.

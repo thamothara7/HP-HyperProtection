@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -18,6 +18,7 @@ from app.normalization.event import NormalizedEvent
 from app.realtime import hub
 from app.simulation.runner import run_scenario
 from app.corporate.router import router as corporate_router
+from app.config import settings
 
 
 @asynccontextmanager
@@ -115,8 +116,10 @@ def events(limit: int = 100, db: Session = Depends(get_ready_db)) -> list[dict[s
 
 
 @app.post("/api/v1/events", response_model=SessionDetail, status_code=201)
-async def ingest_normalized_event(event: NormalizedEvent, db: Session = Depends(get_ready_db)) -> SessionDetail:
+async def ingest_normalized_event(event: NormalizedEvent, x_hyperprotection_collector_token: str | None = Header(default=None), db: Session = Depends(get_ready_db)) -> SessionDetail:
     """Ingestion boundary for real normalized Windows metadata and approved collectors."""
+    if settings.collector_token and x_hyperprotection_collector_token != settings.collector_token:
+        raise HTTPException(status_code=401, detail="Valid collector token required")
     try:
         session = ingest_event(db, event)
     except ValueError as error:

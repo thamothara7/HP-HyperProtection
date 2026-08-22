@@ -1,8 +1,10 @@
-from app.collector.windows_events import read_security_events
+from collections.abc import Iterator
+
+from app.collector.windows_events import read_windows_events
+from app.normalization.event import NormalizedEvent
+from app.privacy.pseudonymizer import Pseudonymizer
 
 
-def read_forwarded_events(**kwargs):
-    """WEF/WEC reader. Run on the Windows Event Collector, not endpoint hosts."""
-    # The reader implementation is shared; it will gain a channel parameter in
-    # the next collector increment alongside WEC subscription documentation.
-    raise NotImplementedError("ForwardedEvents ingestion requires configured WEF/WEC subscriptions.")
+def read_forwarded_events(*, server: str = "localhost", max_events: int = 100, pseudonymizer: Pseudonymizer) -> Iterator[NormalizedEvent]:
+    """Read WEF-delivered Security metadata from a configured Windows Event Collector."""
+    yield from read_windows_events(channel="ForwardedEvents", server=server, max_events=max_events, pseudonymizer=pseudonymizer)
