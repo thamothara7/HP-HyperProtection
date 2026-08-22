@@ -20,6 +20,7 @@ from app.simulation.runner import run_scenario
 from app.corporate.router import router as corporate_router
 from app.config import settings
 from app.deception.decoy_data import DECOYS
+from app.collector.health import all_collectors, heartbeat
 from app.policy.overrides import refresh_identity_override
 
 
@@ -48,6 +49,20 @@ def get_session_or_404(db: Session, session_id: str) -> SessionDetail:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/v1/collectors")
+def collectors() -> list[dict[str, object]]:
+    return all_collectors()
+
+
+@app.post("/api/v1/collectors/heartbeat")
+def collector_heartbeat(payload: dict[str, object], x_hyperprotection_collector_token: str | None = Header(default=None)) -> dict[str, object]:
+    if settings.collector_token and x_hyperprotection_collector_token != settings.collector_token:
+        raise HTTPException(status_code=401, detail="Valid collector token required")
+    collector_id = str(payload.get("collector_id", "unknown"))
+    source = str(payload.get("source", "security"))
+    return heartbeat(collector_id, source=source, submitted=int(payload.get("submitted", 0)), skipped=int(payload.get("skipped", 0)))
 
 
 @app.get("/api/v1/overview", response_model=OverviewResponse)
@@ -120,10 +135,12 @@ def events(limit: int = 100, db: Session = Depends(get_ready_db)) -> list[dict[s
 
 
 @app.post("/api/v1/events", response_model=SessionDetail, status_code=201)
-async def ingest_normalized_event(event: NormalizedEvent, x_hyperprotection_collector_token: str | None = Header(default=None), db: Session = Depends(get_ready_db)) -> SessionDetail:
+async def ingest_normalized_event(event: NormalizedEvent, x_hyperprotection_collector_token: str | None = Header(default=None), x_hyperprotection_source_ip: str | None = Header(default=None), db: Session = Depends(get_ready_db)) -> SessionDetail:
     """Ingestion boundary for real normalized Windows metadata and approved collectors."""
     if settings.collector_token and x_hyperprotection_collector_token != settings.collector_token:
         raise HTTPException(status_code=401, detail="Valid collector token required")
+    if x_hyperprotection_source_ip:
+        event = event.model_copy(update={"metadata": {**event.metadata, "source_ip": x_hyperprotection_source_ip}})
     try:
         session = ingest_event(db, event)
     except ValueError as error:
