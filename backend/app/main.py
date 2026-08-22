@@ -19,6 +19,7 @@ from app.realtime import hub
 from app.simulation.runner import run_scenario
 from app.corporate.router import router as corporate_router
 from app.config import settings
+from app.policy.overrides import refresh_identity_override
 
 
 @asynccontextmanager
@@ -246,7 +247,9 @@ def policies() -> list[dict[str, object]]:
 
 @app.get("/api/v1/approvals")
 def approvals(db: Session = Depends(get_ready_db)) -> list[dict[str, object]]:
-    return [{"id": item.id, "identity_id": item.identity_id, "approval_type": item.approval_type, "active": item.active, "expires_at": item.expires_at, "reason": item.reason} for item in db.scalars(select(ApprovalRecord).order_by(ApprovalRecord.id.desc())).all()]
+    now = datetime.now(UTC)
+    records = db.scalars(select(ApprovalRecord).order_by(ApprovalRecord.id.desc())).all()
+    return [{"id": item.id, "identity_id": item.identity_id, "approval_type": item.approval_type, "active": item.active and (item.expires_at is None or (item.expires_at.replace(tzinfo=UTC) if item.expires_at.tzinfo is None else item.expires_at) > now), "expires_at": item.expires_at, "reason": item.reason} for item in records]
 
 
 @app.post("/api/v1/approvals", status_code=201)
@@ -255,11 +258,23 @@ def create_approval(payload: ApprovalRequest, db: Session = Depends(get_ready_db
         raise HTTPException(status_code=404, detail="Identity not found")
     approval = ApprovalRecord(identity_id=payload.identity_id, approval_type=payload.approval_type, reason=payload.reason, expires_at=payload.expires_at)
     db.add(approval)
-    for session in db.scalars(select(SessionRecord).where(SessionRecord.identity_id == payload.identity_id, SessionRecord.closed_at.is_(None))).all():
-        session.approved_override = True
+    db.flush()
+    refresh_identity_override(db, payload.identity_id)
     db.commit()
     db.refresh(approval)
     return {"id": approval.id, "identity_id": approval.identity_id, "approval_type": approval.approval_type, "active": approval.active, "expires_at": approval.expires_at, "reason": approval.reason}
+
+
+@app.post("/api/v1/approvals/{approval_id}/revoke")
+def revoke_approval(approval_id: int, db: Session = Depends(get_ready_db)) -> dict[str, object]:
+    approval = db.get(ApprovalRecord, approval_id)
+    if approval is None:
+        raise HTTPException(status_code=404, detail="Approval not found")
+    approval.active = False
+    db.flush()
+    effective = refresh_identity_override(db, approval.identity_id)
+    db.commit()
+    return {"id": approval.id, "identity_id": approval.identity_id, "active": approval.active, "effective_override": effective}
 
 
 @app.get("/api/v1/simulation/scenarios", response_model=list[Scenario])

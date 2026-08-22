@@ -13,3 +13,4 @@ export interface DecoyResource { path: string; title: string; content_type: stri
 export interface DecoyInteraction { session_id: string; resource: string; action: string; confidence_delta: number; observed_at: string }
 export interface Policy { id: string; name: string; scope: string; state: string }
 export interface Scenario { id: string; name: string; description: string; expected_outcome: string }
+export interface Approval { id: number; identity_id: string; approval_type: string; active: boolean; expires_at: string | null; reason: string }

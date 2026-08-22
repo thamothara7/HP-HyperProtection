@@ -12,6 +12,7 @@ from app.db.dependencies import get_ready_db
 from app.db.models import SessionRecord
 from app.deception.decoy_data import DECOYS, decoy_payload
 from app.deception.evidence import record_decoy_access, record_honey_credential_attempt, session_can_receive_decoy
+from app.policy.overrides import refresh_identity_override
 
 router = APIRouter(tags=["controlled-corporate-app"])
 SessionHeader = Annotated[str | None, Header(alias="X-HyperProtection-Session")]
@@ -50,6 +51,7 @@ def _resource_response(path: str, session_header: str | None, db: Session) -> di
     session = _session_or_401(db, session_header)
     if path not in REAL_RESOURCES and path not in DECOYS:
         raise HTTPException(status_code=404, detail="Protected resource not found")
+    refresh_identity_override(db, session.identity_id)
     allow_decoy, reason = session_can_receive_decoy(session)
     if allow_decoy and path in DECOYS:
         resource = DECOYS[path]
@@ -96,6 +98,7 @@ def admin_credentials(session_header: SessionHeader = None, db: Session = Depend
 @router.post("/admin/credentials/attempt")
 def credential_attempt(payload: HoneyCredentialAttempt, session_header: SessionHeader = None, db: Session = Depends(get_ready_db)) -> dict[str, object]:
     session = _session_or_401(db, session_header)
+    refresh_identity_override(db, session.identity_id)
     try:
         contained = record_honey_credential_attempt(db, session=session, credential_id=payload.credential_id)
     except PermissionError as error:

@@ -3,9 +3,10 @@ from fastapi.testclient import TestClient
 from uuid import uuid4
 
 from app.db.bootstrap import create_schema
-from app.db.models import DecoyInteractionRecord, DeviceRecord, IdentityRecord, IncidentRecord, ResponseActionRecord, SessionRecord
+from app.db.models import ApprovalRecord, DecoyInteractionRecord, DeviceRecord, IdentityRecord, IncidentRecord, ResponseActionRecord, SessionRecord
 from app.db.session import SessionLocal
 from app.main import app
+from app.policy.overrides import refresh_identity_override
 
 client = TestClient(app)
 
@@ -66,4 +67,23 @@ def test_honey_attempt_contain_only_the_eligible_application_session() -> None:
         db.query(SessionRecord).where(SessionRecord.id == session_id).delete()
         db.query(IdentityRecord).where(IdentityRecord.id == identity_id).delete()
         db.query(DeviceRecord).where(DeviceRecord.id == device_id).delete()
+        db.commit()
+
+
+def test_revoked_approval_stops_session_override() -> None:
+    with SessionLocal() as db:
+        db.query(ApprovalRecord).where(ApprovalRecord.reason == "Test workflow approval").delete()
+        refresh_identity_override(db, "USR-A12")
+        db.commit()
+    created = client.post("/api/v1/approvals", json={"identity_id": "USR-A12", "approval_type": "approved_bulk_operation", "reason": "Test workflow approval"})
+    assert created.status_code == 201
+    approval_id = created.json()["id"]
+    assert client.get("/api/v1/sessions/SES-A102").json()["approved_override"] is True
+    revoked = client.post(f"/api/v1/approvals/{approval_id}/revoke")
+    assert revoked.status_code == 200
+    assert revoked.json()["effective_override"] is False
+    assert client.get("/api/v1/sessions/SES-A102").json()["approved_override"] is False
+    with SessionLocal() as db:
+        db.query(ApprovalRecord).where(ApprovalRecord.id == approval_id).delete()
+        refresh_identity_override(db, "USR-A12")
         db.commit()

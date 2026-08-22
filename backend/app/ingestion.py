@@ -23,6 +23,7 @@ from app.normalization.event import EventCategory, EventType, NormalizedEvent
 from app.risk.engine import compose_risk
 from app.schemas import SessionStatus
 from app.sessions.drift import within_session_drift
+from app.policy.overrides import refresh_identity_override
 
 
 def ingest_event(db: Session, event: NormalizedEvent) -> SessionRecord:
@@ -55,6 +56,7 @@ def ingest_event(db: Session, event: NormalizedEvent) -> SessionRecord:
 
 
 def _evaluate(db: Session, session: SessionRecord) -> None:
+    refresh_identity_override(db, session.identity_id)
     records = db.scalars(select(EventRecord).where(EventRecord.session_id == session.id).order_by(EventRecord.timestamp)).all()
     normalized = [NormalizedEvent(event_id=item.id, timestamp=_as_utc(item.timestamp), identity_id=item.identity_id, session_id=item.session_id, device_id=item.device_id, event_type=EventType(item.event_type), event_category=EventCategory(item.event_category), source=item.source, target=item.target, resource_type=item.resource_type, resource_sensitivity=item.resource_sensitivity, action=item.action, result=item.result, metadata=item.metadata_json) for item in records]
     if not normalized:
