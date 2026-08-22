@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db.bootstrap import create_schema, seed_demo_if_empty
 from app.db.dependencies import get_ready_db
-from app.db.models import ApprovalRecord, BaselineProfileRecord, DecoyInteractionRecord, EventRecord, IdentityRecord, IncidentRecord, IntentDetectionRecord, PeerBaselineRecord, ResponseActionRecord, RiskSnapshotRecord, SessionRecord
+from app.db.models import ApprovalRecord, BaselineProfileRecord, DecoyInteractionRecord, DeviceRecord, EventRecord, IdentityRecord, IncidentRecord, IntentDetectionRecord, PeerBaselineRecord, ResponseActionRecord, RiskSnapshotRecord, SessionRecord
 from app.db.repository import contain, list_session_details, session_detail, session_summary
 from app.db.session import SessionLocal
 from app.schemas import ApprovalRequest, ContainmentResponse, OverviewResponse, Scenario, SessionDetail, SimulationRunRequest
@@ -132,6 +132,18 @@ async def contain_session(session_id: str, db: Session = Depends(get_ready_db)) 
 def events(limit: int = 100, db: Session = Depends(get_ready_db)) -> list[dict[str, object]]:
     records = db.scalars(select(EventRecord).order_by(EventRecord.timestamp.desc()).limit(min(max(limit, 1), 500))).all()
     return [{"event_id": record.id, "timestamp": record.timestamp, "identity_id": record.identity_id, "session_id": record.session_id, "device_id": record.device_id, "event_type": record.event_type, "source": record.source, "target": record.target, "action": record.action, "result": record.result} for record in records]
+
+
+@app.get("/api/v1/devices")
+def devices(db: Session = Depends(get_ready_db)) -> list[dict[str, object]]:
+    rows = db.scalars(select(DeviceRecord).order_by(DeviceRecord.last_seen.desc())).all()
+    return [{"device_id": row.id, "trust_level": row.trust_level, "first_seen": row.first_seen, "last_seen": row.last_seen} for row in rows]
+
+
+@app.get("/api/v1/traffic")
+def traffic(limit: int = 100, db: Session = Depends(get_ready_db)) -> list[dict[str, object]]:
+    rows = db.scalars(select(EventRecord).where(EventRecord.target.is_not(None)).order_by(EventRecord.timestamp.desc()).limit(min(max(limit, 1), 500))).all()
+    return [{"timestamp": row.timestamp, "source": row.source, "source_ip": row.metadata_json.get("source_ip"), "device_id": row.device_id, "target": row.target, "event_type": row.event_type, "action": row.action, "result": row.result} for row in rows]
 
 
 @app.post("/api/v1/events", response_model=SessionDetail, status_code=201)
