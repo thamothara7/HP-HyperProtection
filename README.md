@@ -76,3 +76,7 @@ docs/            Architecture and UI research notes
 ## Windows deployment
 
 The local and WEF/WEC collection procedure is in [docs/windows-telemetry.md](docs/windows-telemetry.md). It explicitly documents collection scope and Windows telemetry limitations. Sysmon remains optional enrichment and is not agentless telemetry.
+
+## PostgreSQL deployment
+
+SQLite is for local development. The PostgreSQL/Alembic configuration and verification steps are in [docs/production-database.md](docs/production-database.md).

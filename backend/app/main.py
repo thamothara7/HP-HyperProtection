@@ -23,9 +23,11 @@ from app.config import settings
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    create_schema()
+    if settings.auto_create_schema:
+        create_schema()
     with SessionLocal() as db:
-        seed_demo_if_empty(db)
+        if settings.seed_demo_data:
+            seed_demo_if_empty(db)
     yield
 
 

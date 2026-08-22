@@ -1,10 +1,13 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
+
+JSON_VALUE = JSON().with_variant(JSONB, "postgresql")
 
 
 class IdentityRecord(Base):
@@ -39,8 +42,8 @@ class SessionRecord(Base):
     status: Mapped[str] = mapped_column(String(40), default="NORMAL")
     is_contained: Mapped[bool] = mapped_column(Boolean, default=False)
     approved_override: Mapped[bool] = mapped_column(Boolean, default=False)
-    features: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    evidence: Mapped[list[str]] = mapped_column(JSON, default=list)
+    features: Mapped[dict[str, Any]] = mapped_column(JSON_VALUE, default=dict)
+    evidence: Mapped[list[str]] = mapped_column(JSON_VALUE, default=list)
 
 
 class EventRecord(Base):
@@ -58,24 +61,25 @@ class EventRecord(Base):
     resource_sensitivity: Mapped[int] = mapped_column(Integer, default=0)
     action: Mapped[str] = mapped_column(String(120))
     result: Mapped[str] = mapped_column(String(40))
-    metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSON_VALUE, default=dict)
 
 
 class BaselineProfileRecord(Base):
     __tablename__ = "baseline_profiles"
     id: Mapped[int] = mapped_column(primary_key=True)
     identity_id: Mapped[str] = mapped_column(ForeignKey("identities.id"), unique=True, index=True)
-    profile: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    profile: Mapped[dict[str, Any]] = mapped_column(JSON_VALUE, default=dict)
     trusted_observations: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class PeerBaselineRecord(Base):
     __tablename__ = "peer_baselines"
+    __table_args__ = (UniqueConstraint("department", "role", name="uq_peer_baselines_department_role"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     department: Mapped[str] = mapped_column(String(120), index=True)
     role: Mapped[str] = mapped_column(String(120), index=True)
-    profile: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    profile: Mapped[dict[str, Any]] = mapped_column(JSON_VALUE, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
@@ -85,8 +89,8 @@ class RiskSnapshotRecord(Base):
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id"), index=True)
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     risk_score: Mapped[int] = mapped_column(Integer)
-    components: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    explanation: Mapped[list[str]] = mapped_column(JSON, default=list)
+    components: Mapped[dict[str, Any]] = mapped_column(JSON_VALUE, default=dict)
+    explanation: Mapped[list[str]] = mapped_column(JSON_VALUE, default=list)
 
 
 class IntentDetectionRecord(Base):
@@ -95,7 +99,7 @@ class IntentDetectionRecord(Base):
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id"), index=True)
     intent: Mapped[str] = mapped_column(String(40))
     confidence: Mapped[float] = mapped_column(Float)
-    evidence: Mapped[list[str]] = mapped_column(JSON, default=list)
+    evidence: Mapped[list[str]] = mapped_column(JSON_VALUE, default=list)
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -118,7 +122,7 @@ class DecoyInteractionRecord(Base):
     action: Mapped[str] = mapped_column(String(80))
     confidence_delta: Mapped[int] = mapped_column(Integer, default=0)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSON_VALUE, default=dict)
 
 
 class ResponseActionRecord(Base):
