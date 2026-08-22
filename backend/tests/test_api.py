@@ -42,6 +42,12 @@ def test_identity_baseline_endpoint_exposes_learning_policy() -> None:
     assert response.json()["learning_policy"]["frozen_above"] == 50
 
 
+def test_deception_resources_endpoint_is_available() -> None:
+    response = client.get("/api/v1/deception/resources")
+    assert response.status_code == 200
+    assert any(item["synthetic"] is True for item in response.json())
+
+
 def test_honey_attempt_contain_only_the_eligible_application_session() -> None:
     create_schema()
     suffix = uuid4().hex

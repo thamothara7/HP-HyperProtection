@@ -19,6 +19,7 @@ from app.realtime import hub
 from app.simulation.runner import run_scenario
 from app.corporate.router import router as corporate_router
 from app.config import settings
+from app.deception.decoy_data import DECOYS
 from app.policy.overrides import refresh_identity_override
 
 
